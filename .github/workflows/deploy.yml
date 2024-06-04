@@ -24,27 +24,29 @@ jobs:
       - name: 생성된 빌드 파일의 이름 변경
         run: mv ./build/libs/*SNAPSHOT.jar ./project.jar
 
-      - name: SCP로 E2에 빌드된 파일 전송
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_PRIVATE_KEY }}
-          source: project.jar
-          target: /home/ubuntu/cicd-server/tobe
+      - name: 프로젝트를 압축하여 AWS S3에 저장
+        # tar 파일로 압축한다.
+        # $GITHUB_SHA : 커밋 해쉬값
+        # project.jar, appspec.yml, scripts 파일을 압축한다.
+        run: tar -czvf $GITHUB_SHA.tar.gz project.jar appspec.yml scripts
 
-      - name: SSH로 EC2에 접속
-        uses: appleboy/ssh-action@v1.0.3
+      - name: AWS 리소스에 접근할 수 있도록 AWS Credentials 설정
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_PRIVATE_KEY }}
-          script_stop: true
-          script: |
-            rm -rf /home/ubuntu/cicd-server/current
-            mkdir /home/ubuntu/cicd-server/current
-            mv /home/ubuntu/cicd-server/tobe/project.jar /home/ubuntu/cicd-server/current/project.jar
-            cd /home/ubuntu/cicd-server/current 
-            sudo fuser -k -n tcp 8080 || true 
-            nohup java -jar project.jar > ./output.log 2>&1 &
-            rm -rf /home/ubuntu/cicd-server/tobe
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: S3 버킷에 프로젝트 폴더 업로드
+        # cp : 복사(copy)
+        # --region : S3 지역을 지정
+        # $GITHUB_SHA.tar.gz : 압축된 파일
+        # s3://cicd-server/$GITHUB_SHA.tar.gz : 압축된 파일을 복사할 S3 버킷 경로
+        run: aws s3 cp --region ap-northeast-2 ./$GITHUB_SHA.tar.gz s3://cicd-server/$GITHUB_SHA.tar.gz
+
+      - name: Code Deploy를 사용하여 EC2에 프로젝트 배포
+        run: aws deploy create-deployment # Code Deploy 배포 그룹에서 배포 생성
+            --application-name cicd-server # Code Deploy 애플리케이션 이름
+            --deployment-config-name CodeDeployDefault.AllAtOnce # 인스턴스가 여러 개라면 한 번에 배포한다.
+            --deployment-group-name Production # Code Deploy 배포 그룹 이름
+            --s3-location bucket=cicd-server,bundleType=tar,key=$GITHUB_SHA.tar.gz # s3 경로, tgz: tar.gz, key: s3에 저장된 파일
