@@ -1,23 +1,17 @@
-# Code Deploy 설정
 version: 0.0
 os: linux
 
-# Code Deploy는 S3로부터 빌드 파일을 다운 받아 서버로 배포한다.
-# 따라서 S3에 저장된 빌드 파일을 다운 받도록 경로를 지정한다.
 files:
-  - source: / # AWS S3에 저장된 모든 파일(/)
-    destination: /home/ubuntu/cicd-server # AWS EC2의 경로로 이동
+  - source: /
+    destination: /home/ubuntu/cicd-server
 
-# 권한 지정
 permission:
   - object: /
     owner: ubuntu
     group: ubuntu
 
 hooks:
-  ApplicationStart: # 애플리케이션이 시작할 때
-    # start-server.sh 파일은 linux 명령어가 담긴 파일이고, 쉘 스크립트(S3에 다운 받은 빌드 피일을서버로 배포하는 명령어)를 실행한다.
-    # 현재 프로젝트의 경로를 작성
+  ApplicationStart:
     - location: scripts/start-server.sh
-      timeout: 60 # 스크립트 실행 시간을 설정, 시간을 넘어서면 에러 발생
-      runas: ubuntu # 쉘 스크립트를 ubuntu에서 실행
+      timeout: 60
+      runas: ubuntu
